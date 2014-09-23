@@ -1,0 +1,10 @@
+prefix=@prefix@
+exec_prefix=@exec_prefix@
+libdir=@libdir@
+includedir=@includedir@
+
+Name: armette
+Description: armette pkg-config dependence.
+Version: 0.1
+Libs: -L${libdir} -larmette
+Cflags: -I${includedir}/armette-0.1/armette
