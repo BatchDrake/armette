@@ -97,7 +97,7 @@ arm32_cpu_add_armette_vdso (struct arm32_cpu *cpu)
 {
   struct arm32_segment *seg;
 
-  if ((seg = arm32_segment_new (ARM32_DEFAULT_VDSO_BOTTOM, arm_vdso, sizeof (arm_vdso), SA_R)) == NULL)
+  if ((seg = arm32_segment_new (ARM32_DEFAULT_VDSO_BOTTOM, arm_vdso, sizeof (arm_vdso), SA_R | SA_X)) == NULL)
     return -1;
 
   if (arm32_cpu_add_segment (cpu, seg) == -1)
