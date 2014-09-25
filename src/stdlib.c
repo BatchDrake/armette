@@ -35,7 +35,7 @@
 #define ARMSYM(sname) JOIN (arm32_stdlib_, sname)
 
 #define ARMPROTO(sname) \
-  int ARMSYM (sname) (struct arm32_cpu *cpu, const char *name, void *data)
+  int ARMSYM (sname) (struct arm32_cpu *cpu, const char *name, void *data, uint32_t prev)
 
 extern uint32_t  arm_errno_virt;
 extern uint32_t *arm_errno;

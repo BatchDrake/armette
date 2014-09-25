@@ -26,10 +26,11 @@
 
 struct arm32_cpu;
 
-struct arm32_elf_symbol_override
+struct arm32_elf_instruction_override
 {
   char *name;
-  int (*callback) (struct arm32_cpu *, const char *name, void *data);
+  uint32_t prev;
+  int (*callback) (struct arm32_cpu *, const char *name, void *data, uint32_t prev);
   void *data;
 };
 
@@ -46,21 +47,49 @@ struct arm32_elf
 
   uint32_t *got; /* Global offset table */
 
-  int symtab_size;
+  /* Used for dynamic linking */
   Elf32_Sym *symtab;
-  char *strtab;
-  int strtab_size;  
-  int symtab_first;
-  int symtab_sane;
+  int        symtab_size;
+  
+  char      *strtab;
+  int        strtab_size;  
 
-  PTR_LIST (struct arm32_elf_symbol_override, symbol);
+  int        symtab_first;
+  int        symtab_sane;
+
+  Elf32_Sym *debug_symtab;
+  int        debug_symtab_size;
+  
+  char      *debug_strtab;
+  int        debug_strtab_size;
+  
+  PTR_LIST (struct arm32_elf_instruction_override, override);
 };
 
 struct arm32_cpu *arm32_cpu_new_from_elf (const char *);
 int arm32_cpu_get_symbol_index (struct arm32_cpu *, const char *);
-int arm32_cpu_define_symbol (struct arm32_elf *, const char *, int, int (*) (struct arm32_cpu *, const char *name, void *data), void *);
-int arm32_cpu_override_symbol (struct arm32_cpu *, const char *, int (*) (struct arm32_cpu *, const char *name, void *data), void *);
+int arm32_cpu_define_symbol (struct arm32_elf *, const char *, int, int (*) (struct arm32_cpu *, const char *name, void *data, uint32_t), void *);
+int arm32_cpu_override_symbol (struct arm32_cpu *, const char *, int (*) (struct arm32_cpu *, const char *name, void *data, uint32_t), void *);
 int arm32_cpu_prepare_main (struct arm32_cpu *, int, char **);
 void arm32_init_stdlib_hooks (struct arm32_cpu *);
+uint32_t arm32_elf_resolve_debug_symbol (struct arm32_elf *, const char *);
+int arm32_elf_replace_instruction (struct arm32_elf *elf, const char *name, uint32_t vaddr, int (*callback) (struct arm32_cpu *, const char *name, void *data, uint32_t), void *data);
+
+static inline uint32_t
+arm32_cpu_resolve_debug_symbol (struct arm32_cpu *cpu, const char *name)
+{
+  return arm32_elf_resolve_debug_symbol ((struct arm32_elf *) cpu->data, name);
+}
+
+static inline uint32_t
+arm32_cpu_override_debug_symbol (struct arm32_cpu *cpu, const char *name, int (*callback) (struct arm32_cpu *, const char *name, void *data, uint32_t), void *data)
+{
+  uint32_t addr;
+  
+  if ((addr = arm32_elf_resolve_debug_symbol ((struct arm32_elf *) cpu->data, name)) != 0)
+    return arm32_elf_replace_instruction ((struct arm32_elf *) cpu->data, name, addr, callback, data);
+
+  return -1;
+}
 
 #endif /* _ARM_ELF_H */

@@ -72,15 +72,17 @@ arm32_elf_destroy (struct arm32_elf *elf)
 {
   int i;
 
-  for (i = 0; i < elf->symbol_count; ++i)
-    if (elf->symbol_list[i] != NULL)
+  for (i = 0; i < elf->override_count; ++i)
+    if (elf->override_list[i] != NULL)
     {
-      free (elf->symbol_list[i]->name);
-      free (elf->symbol_list[i]);
+      if (elf->override_list[i]->name != NULL)
+        free (elf->override_list[i]->name);
+      
+      free (elf->override_list[i]);
     }
 
-  if (elf->symbol_list != NULL)
-    free (elf->symbol_list);
+  if (elf->override_list != NULL)
+    free (elf->override_list);
   
   if (elf->base != NULL && elf->base != (caddr_t) -1)
     munmap (elf->base, elf->size);
@@ -220,7 +222,7 @@ arm32_elf_dynamic_init (struct arm32_elf *elf)
 }
 
 int
-arm32_elf_dummy_import (struct arm32_cpu *cpu, const char *name, void *data)
+arm32_elf_dummy_import (struct arm32_cpu *cpu, const char *name, void *data, uint32_t prev)
 {
   error ("Undefined function `%s()'\n", name);
   
@@ -237,6 +239,52 @@ arm32_elf_fix_imports (struct arm32_elf *elf)
     for (i = elf->symtab_first; i < elf->symtab_size; ++i)
       if (elf->symtab[i].st_name < elf->strtab_size)
 	arm32_cpu_define_symbol (elf, elf->strtab + elf->symtab[i].st_name, i, arm32_elf_dummy_import, NULL);
+}
+
+void
+arm32_elf_init_debug_symbols (struct arm32_elf *elf)
+{
+  int i;
+  int maxnameoff;
+  Elf32_Shdr *shdrs;
+  
+  if (elf->ehdr->e_shnum > 0 && (elf->ehdr->e_shoff + elf->ehdr->e_shnum * sizeof (Elf32_Shdr)) <= elf->size && elf->ehdr->e_shstrndx < elf->ehdr->e_shnum)
+  {
+    shdrs = (Elf32_Shdr *) (elf->base + elf->ehdr->e_shoff);
+
+    if (shdrs[elf->ehdr->e_shstrndx].sh_offset + (maxnameoff = shdrs[elf->ehdr->e_shstrndx].sh_size) <= elf->size)
+      for (i = 0; i < elf->ehdr->e_shnum; ++i)
+        if (shdrs[i].sh_name < maxnameoff)
+          if (shdrs[i].sh_type == SHT_SYMTAB &&
+              shdrs[i].sh_offset + shdrs[i].sh_size <= elf->size &&
+              shdrs[i].sh_link < elf->ehdr->e_shnum &&
+              shdrs[shdrs[i].sh_link].sh_type == SHT_STRTAB && /* I definitely love sequence points */
+              shdrs[shdrs[i].sh_link].sh_offset + shdrs[shdrs[i].sh_link].sh_size <= elf->size
+            ) 
+          {
+            elf->debug_symtab = (Elf32_Sym *) (elf->base + shdrs[i].sh_offset);
+            elf->debug_strtab =      (char *) (elf->base + shdrs[shdrs[i].sh_link].sh_offset);
+            
+            elf->debug_symtab_size = shdrs[i].sh_size / sizeof (Elf32_Sym);
+            elf->debug_strtab_size = shdrs[shdrs[i].sh_link].sh_size;
+            
+            return;
+          }
+    
+  }
+}
+
+uint32_t
+arm32_elf_resolve_debug_symbol (struct arm32_elf *elf, const char *name)
+{
+  int i;
+
+  for (i = 0; i < elf->debug_symtab_size; ++i)
+    if (elf->debug_symtab[i].st_name < elf->debug_strtab_size)
+      if (strcmp (elf->debug_strtab + elf->debug_symtab[i].st_name, name) == 0)
+        return elf->debug_symtab[i].st_value;
+
+  return 0;
 }
 
 
@@ -365,6 +413,8 @@ arm32_cpu_new_from_elf (const char *path)
   arm32_elf_dynamic_init (elf);
 
   arm32_elf_fix_imports (elf);
+
+  arm32_elf_init_debug_symbols (elf);
   
   return new;
   
@@ -400,27 +450,27 @@ arm32_elf_remove_symbol (struct arm32_elf *elf, const char *name)
 {
   int i;
 
-  for (i = 0; i < elf->symbol_count; ++i)
-    if (strcmp (elf->symbol_list[i]->name, name) == 0)
+  for (i = 0; i < elf->override_count; ++i)
+    if (strcmp (elf->override_list[i]->name, name) == 0)
     {
-      free (elf->symbol_list[i]->name);
-      free (elf->symbol_list[i]);
-      elf->symbol_list[i] = NULL;
+      free (elf->override_list[i]->name);
+      free (elf->override_list[i]);
+      elf->override_list[i] = NULL;
     }
 }
 
 int
-arm32_cpu_override_symbol (struct arm32_cpu *cpu, const char *name, int (*callback) (struct arm32_cpu *, const char *name, void *data), void *data)
+arm32_cpu_override_symbol (struct arm32_cpu *cpu, const char *name, int (*callback) (struct arm32_cpu *, const char *name, void *data, uint32_t), void *data)
 {
   int i;
   struct arm32_elf *elf = (struct arm32_elf *) cpu->data;
   
-  for (i = 0; i < elf->symbol_count; ++i)
-    if (elf->symbol_list[i] != NULL)
-      if (strcmp (elf->symbol_list[i]->name, name) == 0)
+  for (i = 0; i < elf->override_count; ++i)
+    if (elf->override_list[i] != NULL && elf->override_list[i]->name != NULL)
+      if (strcmp (elf->override_list[i]->name, name) == 0)
       {
-	elf->symbol_list[i]->callback = callback;
-	elf->symbol_list[i]->data = data;
+	elf->override_list[i]->callback = callback;
+	elf->override_list[i]->data = data;
 
 	return 0;
       }
@@ -429,27 +479,31 @@ arm32_cpu_override_symbol (struct arm32_cpu *cpu, const char *name, int (*callba
 }
 
 int
-arm32_cpu_define_symbol (struct arm32_elf *elf, const char *name, int sym_idx, int (*callback) (struct arm32_cpu *, const char *name, void *data), void *data)
+arm32_elf_replace_instruction (struct arm32_elf *elf, const char *name, uint32_t vaddr, int (*callback) (struct arm32_cpu *, const char *name, void *data, uint32_t), void *data)
 {
-  struct arm32_elf_symbol_override *new;
+  struct arm32_elf_instruction_override *new;
   uint32_t *addr;
+  int sym_idx;
   
-  if ((addr = arm32_elf_translate (elf, elf->symtab[sym_idx].st_value)) == NULL)
+  if ((addr = arm32_elf_translate (elf, vaddr)) == NULL)
     return 1;
   
-  if ((new = malloc (sizeof (struct arm32_elf_symbol_override))) == NULL)
+  if ((new = malloc (sizeof (struct arm32_elf_instruction_override))) == NULL)
     return -1;
 
-  if ((new->name = strdup (name)) == NULL)
-  {
-    free (new);
-    return -1;
-  }
-
+  if (name == NULL)
+    new->name = NULL;
+  else
+    if ((new->name = strdup (name)) == NULL)
+    {
+      free (new);
+      return -1;
+    }
+  
   new->callback = callback;
   new->data = data;
 
-  if ((sym_idx = PTR_LIST_APPEND_CHECK (elf->symbol, new)) == -1)
+  if ((sym_idx = PTR_LIST_APPEND_CHECK (elf->override, new)) == -1)
   {
     free (new->name);
     free (new);
@@ -457,9 +511,17 @@ arm32_cpu_define_symbol (struct arm32_elf *elf, const char *name, int sym_idx, i
     return -1;
   }
 
+  new->prev = *addr; /* Save old instruction */
+  
   *addr = 0xef000000 + ((sym_idx + ARM32_IMPORT_HOOK_BASE) & 0xffffff);
 
   return 0;
+}
+
+int
+arm32_cpu_define_symbol (struct arm32_elf *elf, const char *name, int sym_idx, int (*callback) (struct arm32_cpu *, const char *, void *, uint32_t), void *data)
+{
+  return arm32_elf_replace_instruction (elf, name, elf->symtab[sym_idx].st_value, callback, NULL);
 }
 
 int
@@ -469,19 +531,16 @@ arm32_elf_call_external (struct arm32_cpu *cpu, uint32_t sym)
   int ret;
   
   /* Regular SWI interrupt */
-  if (sym < ARM32_IMPORT_HOOK_BASE || (sym - ARM32_IMPORT_HOOK_BASE > elf->symbol_count))
+  if (sym < ARM32_IMPORT_HOOK_BASE || (sym - ARM32_IMPORT_HOOK_BASE > elf->override_count))
     EXCEPT (ARM32_EXCEPTION_SWI);
 
-  if (elf->symbol_list[sym - ARM32_IMPORT_HOOK_BASE] == NULL)
-  {
-    error ("Call to whiteout-ed symbol #%d\n", sym);
+  if (elf->override_list[sym - ARM32_IMPORT_HOOK_BASE] == NULL)
     EXCEPT (ARM32_EXCEPTION_UNDEF);
-  }
   else
   {
-    debug ("  Call external %s()\n", elf->symbol_list[sym - ARM32_IMPORT_HOOK_BASE]->name);
+    debug ("  Call overriden %s()\n", elf->override_list[sym - ARM32_IMPORT_HOOK_BASE]->name == NULL ? "<unknown>" : elf->override_list[sym - ARM32_IMPORT_HOOK_BASE]->name);
 
-    if ((ret = (elf->symbol_list[sym - ARM32_IMPORT_HOOK_BASE]->callback) (cpu, elf->symbol_list[sym - ARM32_IMPORT_HOOK_BASE]->name, elf->symbol_list[sym - ARM32_IMPORT_HOOK_BASE]->data)) < 0)
+    if ((ret = (elf->override_list[sym - ARM32_IMPORT_HOOK_BASE]->callback) (cpu, elf->override_list[sym - ARM32_IMPORT_HOOK_BASE]->name, elf->override_list[sym - ARM32_IMPORT_HOOK_BASE]->data, elf->override_list[sym - ARM32_IMPORT_HOOK_BASE]->prev)) < 0)
       return ret;
   }
   return ret;
