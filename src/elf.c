@@ -479,6 +479,25 @@ arm32_cpu_override_symbol (struct arm32_cpu *cpu, const char *name, int (*callba
 }
 
 int
+arm32_cpu_restore_symbol (struct arm32_cpu *cpu, const char *name)
+{
+  int i;
+  struct arm32_elf *elf = (struct arm32_elf *) cpu->data;
+  
+  for (i = 0; i < elf->override_count; ++i)
+    if (elf->override_list[i] != NULL && elf->override_list[i]->name != NULL)
+      if (strcmp (elf->override_list[i]->name, name) == 0)
+      {
+	*elf->override_list[i]->phys = elf->override_list[i]->prev;
+
+        
+	return 0;
+      }
+
+  return -1;
+}
+
+int
 arm32_elf_replace_instruction (struct arm32_elf *elf, const char *name, uint32_t vaddr, int (*callback) (struct arm32_cpu *, const char *name, void *data, uint32_t), void *data)
 {
   struct arm32_elf_instruction_override *new;
@@ -511,6 +530,7 @@ arm32_elf_replace_instruction (struct arm32_elf *elf, const char *name, uint32_t
     return -1;
   }
 
+  new->phys = addr;
   new->prev = *addr; /* Save old instruction */
   
   *addr = 0xef000000 + ((sym_idx + ARM32_IMPORT_HOOK_BASE) & 0xffffff);

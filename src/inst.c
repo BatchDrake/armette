@@ -7,8 +7,7 @@ IFPROTO (longmul);
 IFPROTO (swap);
 IFPROTO (lssingle);
 IFPROTO (lsmultiple);
-IFPROTO (halftransimm);
-IFPROTO (halftransreg);
+IFPROTO (halftrans);
 IFPROTO (branch);
 IFPROTO (branchex);
 IFPROTO (codtrans);
@@ -24,11 +23,10 @@ IFPROTO (subfx);
    cond 0111111 widthm1 Rd 1sb 101 Rn */
   
 
-static const struct arm32_inst inst_list[16] =
+static const struct arm32_inst inst_list[15] =
 {
   {0b111111111111111111111111, 0b000100101111111111110001, IF (branchex)},
-  {0b111001000000000000001001, 0b000001000000000000001001, IF (halftransimm)},
-  {0b111001000000000011111001, 0b000000000000000000001001, IF (halftransreg)},
+  {0b111000000000000011111001, 0b000000000000000000001001, IF (halftrans)},
   {0b111110100000000000000111, 0b011110100000000000000101, IF (subfx)},
   {0b111110000000000000001111, 0b011010000000000000000111, IF (suxt)},
   {0b111111000000000000001111, 0b000000000000000000001001, IF (multiply)},
@@ -547,19 +545,103 @@ IFPROTO (lsmultiple)
   return 0;
 }
 
-IFPROTO (halftransimm)
+IFPROTO (halftrans)
 {
-  debug ("Half transfer with immediate instruction issued\n");
+  uint32_t preidx = UINT32_GET_FIELD (instruction, 24, 1);
+  uint32_t up_bit = UINT32_GET_FIELD (instruction, 23, 1);
+  uint32_t is_imm = UINT32_GET_FIELD (instruction, 22, 1);
+  uint32_t wrback = UINT32_GET_FIELD (instruction, 21, 1);
+  uint32_t isload = UINT32_GET_FIELD (instruction, 20, 1);
+  uint32_t rn     = UINT32_GET_FIELD (instruction, 16, 4);
+  uint32_t rd     = UINT32_GET_FIELD (instruction, 12, 4);
+  uint32_t offhi  = UINT32_GET_FIELD (instruction, 8,  4);
+  uint32_t offlo  = UINT32_GET_FIELD (instruction, 0,  4);
+  uint32_t halfw  = UINT32_GET_FIELD (instruction, 5,  1);
+  uint32_t signex = UINT32_GET_FIELD (instruction, 6,  1);
   
-  EXCEPT (ARM32_EXCEPTION_UNDEF);
+  uint32_t rm     = offlo;
+  
+  uint16_t *phaddr;
+  
+  uint32_t addr;
+  
+  uint32_t base = REG (cpu, rn);
+  uint32_t offset = is_imm ? (offhi << 4) | offlo : REG (cpu, offlo);
+
+  struct arm32_segment *seg;
+  
+  addr = base;
+
+  if (preidx)
+    addr += up_bit ? offset : -offset;
+
+  if ((seg = arm32_cpu_lookup_segment (cpu, addr)) == NULL)
+  {
+    error ("%s: unmapped address 0x%x\n", isload ? "ldrh" : "strh", addr);
+
+    EXCEPT (ARM32_EXCEPTION_DATA);
+  }
+
+  if (arm32_segment_check_access (seg, isload ? SA_R : SA_W) == -1)
+  {
+    error ("%s: forbidden access to 0x%x\n", isload ? "ldrh" : "strh", addr);
+
+    EXCEPT (ARM32_EXCEPTION_DATA);
+  }
+
+  phaddr = arm32_segment_translate (seg, addr);
+
+  debug ("Half transfer with immediate instruction issued\n");
+ 
+  if (isload)
+  {
+    if (!halfw)
+      REG (cpu, rd) = signex ? __extend ((uint8_t) *phaddr, 8) : (uint8_t) *phaddr;
+    else
+      REG (cpu, rd) = signex ? __extend (*phaddr, 16) : *phaddr;
+
+    if (!halfw)
+      debug ("load: r%-2d = 0x%02x <-- 0x%08x (r%d)\n", rd, REG (cpu, rd), addr, rn);
+    else
+      debug ("load: r%-2d = 0x%04x <-- 0x%08x (r%d)\n", rd, REG (cpu, rd), addr, rn);
+  }
+  else
+  {
+    if (signex)
+    {
+      error ("Sign extension store is not supported\n");
+
+      EXCEPT (ARM32_EXCEPTION_UNDEF);
+    }
+    
+    if (!halfw)
+      debug ("stor: r%-2d = 0x%02x --> 0x%08x (r%d)\n", rd, (uint8_t) REG (cpu, rd), addr, rn);
+    else
+      debug ("stor: r%-2d = 0x%04x --> 0x%08x (r%d)\n", rd, (uint16_t) REG (cpu, rd), addr, rn);
+    
+    if (!halfw)
+      UINT32_SET_FIELD (*phaddr, 0, 8, (uint8_t) REG (cpu, rd));
+    else
+      *phaddr = REG (cpu, rd);
+  }
+  
+  if (!preidx)
+  {
+    addr += up_bit ? offset : -offset;
+    
+    /* This is a privileged instruction! */
+    if (wrback)
+      EXCEPT (ARM32_EXCEPTION_DATA);
+    
+    wrback = 1;
+  }
+  
+  if (wrback)
+    REG (cpu, rn) = addr;
+  
+  return 0;
 }
 
-IFPROTO (halftransreg)
-{
-  debug ("Half transfer with register instruction issued\n");
-  
-  EXCEPT (ARM32_EXCEPTION_UNDEF);
-}
 
 IFPROTO (branch)
 {
@@ -637,7 +719,7 @@ arm32_inst_decode (struct arm32_cpu *cpu, uint32_t inst)
   /* Don't care about condition */
   inst = (inst >> 4) & 0xffffff;
   
-  for (i = 0; i < 16; ++i)
+  for (i = 0; i < 15; ++i)
   {
     if ((inst & inst_list[i].mask) == inst_list[i].opcode)
       return &inst_list[i];

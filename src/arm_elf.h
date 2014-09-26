@@ -24,12 +24,19 @@
 #include <util.h>
 #include <elf.h>
 
+#define ARMSYM(sname) JOIN (arm32_stdlib_, sname)
+
+#define ARMPROTO(sname) \
+  int ARMSYM (sname) (struct arm32_cpu *cpu, const char *name, void *data, uint32_t prev)
+
+#define ARMETTE_OVERRIDE(cpu, name) arm32_cpu_override_symbol (cpu, STRINGIFY (name), ARMSYM (name), NULL);
 struct arm32_cpu;
 
 struct arm32_elf_instruction_override
 {
   char *name;
   uint32_t prev;
+  uint32_t *phys;
   int (*callback) (struct arm32_cpu *, const char *name, void *data, uint32_t prev);
   void *data;
 };
@@ -70,6 +77,7 @@ struct arm32_cpu *arm32_cpu_new_from_elf (const char *);
 int arm32_cpu_get_symbol_index (struct arm32_cpu *, const char *);
 int arm32_cpu_define_symbol (struct arm32_elf *, const char *, int, int (*) (struct arm32_cpu *, const char *name, void *data, uint32_t), void *);
 int arm32_cpu_override_symbol (struct arm32_cpu *, const char *, int (*) (struct arm32_cpu *, const char *name, void *data, uint32_t), void *);
+int arm32_cpu_restore_symbol (struct arm32_cpu *, const char *);
 int arm32_cpu_prepare_main (struct arm32_cpu *, int, char **);
 void arm32_init_stdlib_hooks (struct arm32_cpu *);
 uint32_t arm32_elf_resolve_debug_symbol (struct arm32_elf *, const char *);
