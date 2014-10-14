@@ -241,6 +241,11 @@ IFPROTO (data)
 
     break;
 
+    
+  case ARM32_DATA_BIC:
+    result = op1 & ~op2;
+    break;
+    
   case ARM32_DATA_TST:
     if (!ccodes)
     {
@@ -253,9 +258,6 @@ IFPROTO (data)
     else
       nowrite = 1; /* Regular TST instruction */
 
-  case ARM32_DATA_BIC:
-    op2 = ~op2;
-    
   case ARM32_DATA_AND:
     result = op1 & op2;
     break;

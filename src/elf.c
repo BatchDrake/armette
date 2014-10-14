@@ -560,7 +560,13 @@ arm32_elf_call_external (struct arm32_cpu *cpu, uint32_t sym)
   {
     debug ("  Call overriden %s()\n", elf->override_list[sym - ARM32_IMPORT_HOOK_BASE]->name == NULL ? "<unknown>" : elf->override_list[sym - ARM32_IMPORT_HOOK_BASE]->name);
 
-    if ((ret = (elf->override_list[sym - ARM32_IMPORT_HOOK_BASE]->callback) (cpu, elf->override_list[sym - ARM32_IMPORT_HOOK_BASE]->name, elf->override_list[sym - ARM32_IMPORT_HOOK_BASE]->data, elf->override_list[sym - ARM32_IMPORT_HOOK_BASE]->prev)) < 0)
+    if ((ret = (elf->override_list[sym - ARM32_IMPORT_HOOK_BASE]->callback)
+         (
+           cpu,
+           elf->override_list[sym - ARM32_IMPORT_HOOK_BASE]->name,
+           elf->override_list[sym - ARM32_IMPORT_HOOK_BASE]->data,
+           elf->override_list[sym - ARM32_IMPORT_HOOK_BASE]->prev)
+          ) < 0)
       return ret;
   }
   return ret;
