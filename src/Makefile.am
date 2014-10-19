@@ -9,5 +9,4 @@ libarmette_la_LDFLAGS = @GLOBAL_LDFLAGS@
 
 libarmette_la_LIBADD = ../util/libutil.la @GLOBAL_LDFLAGS@
 
-libarmette_la_SOURCES = arm_cpu.h arm_elf.h armette.h arm_inst.h cpu.c elf.c exec.c inst.c stdlib.c
-
+libarmette_la_SOURCES = arm_cpu.h arm_elf.h armette.h arm_inst.h arm_watch.h cpu.c elf.c exec.c inst.c stdlib.c watch.c
