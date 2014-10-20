@@ -34,6 +34,7 @@
 #define ARM32_EXCEPTION_IRQ   6 /* IRQ */
 #define ARM32_EXCEPTION_FIQ   7 /* Fast IRQ */
 #define ARM32_EXCEPTION_EXIT  8 /* Exit emulator */
+#define ARM32_EXCEPTION_TRAP  9 /* Trap */
 
 #define ARM32_DEFAULT_STACK_SIZE   (64 * 1024)
 #define ARM32_DEFAULT_STACK_BOTTOM 0xc0000000
@@ -169,6 +170,8 @@ struct arm32_regs
   uint32_t cpsr;
 };
 
+struct arm32_watchpoint_set;
+
 struct arm32_cpu
 {
   struct arm32_regs regs;
@@ -185,6 +188,8 @@ struct arm32_cpu
 
   void *data;
   void (*dtor) (void *);
+
+  struct arm32_watchpoint_set *wps;
 };
 
 static inline struct arm32_segment *

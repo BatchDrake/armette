@@ -135,8 +135,10 @@ arm32_watchpoint_delete (struct arm32_watchpoint_set *wps, struct arm32_watchpoi
 }
 
 void
-arm32_watchpoint_memory_pre (struct arm32_watchpoint_set *wps, struct arm32_cpu *cpu, struct arm32_watchpoint *wp)
+arm32_cpu_watchpoint_memory_pre (struct arm32_cpu *cpu, struct arm32_watchpoint *wp)
 {
+  struct arm32_watchpoint_set *wps = cpu->wps;
+  
   if (wp->cached_phys == NULL)
     if ((wp->cached_phys = arm32_cpu_translate_read (cpu, wp->addr)) == NULL)
     {
@@ -151,10 +153,12 @@ arm32_watchpoint_memory_pre (struct arm32_watchpoint_set *wps, struct arm32_cpu 
 }
 
 int
-arm32_watchpoint_test (struct arm32_watchpoint_set *wps, struct arm32_cpu *cpu, uint32_t inst, struct arm32_watchpoint *wp)
+arm32_cpu_watchpoint_test (struct arm32_cpu *cpu, uint32_t inst, struct arm32_watchpoint *wp)
 {
   int i;
   int n = 0;
+
+  struct arm32_watchpoint_set *wps = cpu->wps;
   
   switch (wp->type)
   {
@@ -194,14 +198,113 @@ arm32_watchpoint_test (struct arm32_watchpoint_set *wps, struct arm32_cpu *cpu, 
   return n;
 }
 
-int
-arm32_watchpoint_set_test_pre (struct arm32_cpu *cpu, uint32_t inst, void *data)
+struct arm32_watchpoint *
+arm32_cpu_watch_regs (struct arm32_cpu *cpu, const char *name, int (*callback) (struct arm32_cpu *, struct arm32_watchpoint *, void *), void *data, uint16_t mask)
 {
-  struct arm32_watchpoint_set *set = (struct arm32_watchpoint_set *) data;
+  struct arm32_watchpoint *wp;
 
+  if ((wp = arm32_watchpoint_new (name, ARM32_WATCHPOINT_REG, ARM32_WATCHPOINT_POST_EXEC)) == NULL)
+    return NULL;
+
+  wp->callback = callback;
+  wp->data     = data;
+  
+  wp->mask     = mask;
+  
+  if (arm32_watchpoint_register (cpu->wps, wp) == -1)
+  {
+    arm32_watchpoint_destroy (wp);
+
+    return NULL;
+  }
+
+  return wp;
+}
+
+struct arm32_watchpoint *
+arm32_cpu_watch_reg (struct arm32_cpu *cpu, const char *name, int (*callback) (struct arm32_cpu *, struct arm32_watchpoint *, void *), void *data, uint8_t reg)
+{
+  if (reg >= 16)
+    return NULL; /* Wrong reg */
+
+  return arm32_cpu_watch_regs (cpu, name, callback, data, 1 << reg);
+}
+
+struct arm32_watchpoint *
+arm32_cpu_watch_memory (struct arm32_cpu *cpu, const char *name, int (*callback) (struct arm32_cpu *, struct arm32_watchpoint *, void *), void *data, uint32_t addr)
+{
+  struct arm32_watchpoint *wp;
+
+  if ((wp = arm32_watchpoint_new (name, ARM32_WATCHPOINT_MEMORY, ARM32_WATCHPOINT_POST_EXEC)) == NULL)
+    return NULL;
+
+  wp->callback = callback;
+  wp->data     = data;
+  
+  wp->addr     = addr;
+  
+  if (arm32_watchpoint_register (cpu->wps, wp) == -1)
+  {
+    arm32_watchpoint_destroy (wp);
+
+    return NULL;
+  }
+
+  return wp;
+}
+
+struct arm32_watchpoint *
+arm32_cpu_watch_step (struct arm32_cpu *cpu, const char *name, int (*callback) (struct arm32_cpu *, struct arm32_watchpoint *, void *), void *data)
+{
+  struct arm32_watchpoint *wp;
+
+  if ((wp = arm32_watchpoint_new (name, ARM32_WATCHPOINT_STEP, ARM32_WATCHPOINT_POST_EXEC)) == NULL)
+    return NULL;
+
+  wp->callback = callback;
+  wp->data     = data;
+    
+  if (arm32_watchpoint_register (cpu->wps, wp) == -1)
+  {
+    arm32_watchpoint_destroy (wp);
+
+    return NULL;
+  }
+
+  return wp;
+}
+
+struct arm32_watchpoint *
+arm32_cpu_watch_inst (struct arm32_cpu *cpu, const char *name, int (*callback) (struct arm32_cpu *, struct arm32_watchpoint *, void *), void *data, uint32_t inst, uint32_t mask)
+{
+  struct arm32_watchpoint *wp;
+
+  if ((wp = arm32_watchpoint_new (name, ARM32_WATCHPOINT_INST, ARM32_WATCHPOINT_POST_EXEC)) == NULL)
+    return NULL;
+
+  wp->callback = callback;
+  wp->data     = data;
+
+  wp->inst     = inst;
+  wp->mask     = mask;
+  
+  if (arm32_watchpoint_register (cpu->wps, wp) == -1)
+  {
+    arm32_watchpoint_destroy (wp);
+
+    return NULL;
+  }
+
+  return wp;
+}
+
+int
+arm32_cpu_watchpoint_set_test_pre (struct arm32_cpu *cpu, uint32_t inst)
+{
   int i;
+  struct arm32_watchpoint_set *set = cpu->wps;
   uint16_t regmask = set->regmask;
-
+  
   if (regmask)
     for (i = 0; i < 16; ++i)
       if (regmask & i)
@@ -213,11 +316,11 @@ arm32_watchpoint_set_test_pre (struct arm32_cpu *cpu, uint32_t inst, void *data)
       switch (set->watchpoint_list[i]->type)
       {
       case ARM32_WATCHPOINT_MEMORY:
-	arm32_watchpoint_memory_pre (set, cpu, set->watchpoint_list[i]);
+	arm32_cpu_watchpoint_memory_pre (cpu, set->watchpoint_list[i]);
 	break;
       }
 
-      if ((set->watchpoint_list[i]->when & ARM32_WATCHPOINT_PRE_EXEC) && arm32_watchpoint_test (set, cpu, inst, set->watchpoint_list[i]))
+      if ((set->watchpoint_list[i]->when & ARM32_WATCHPOINT_PRE_EXEC) && arm32_cpu_watchpoint_test (cpu, inst, set->watchpoint_list[i]))
       {
 	if (set->watchpoint_list[i]->callback == NULL)
 	{
@@ -234,15 +337,15 @@ arm32_watchpoint_set_test_pre (struct arm32_cpu *cpu, uint32_t inst, void *data)
 }
 
 int
-arm32_watchpoint_set_test_post (struct arm32_cpu *cpu, uint32_t inst, void *data)
+arm32_cpu_watchpoint_set_test_post (struct arm32_cpu *cpu, uint32_t inst)
 {
-  struct arm32_watchpoint_set *set = (struct arm32_watchpoint_set *) data;
-
   int i;
+
+  struct arm32_watchpoint_set *set = cpu->wps;
   
   for (i = 0; i < set->watchpoint_count; ++i)
     if (set->watchpoint_list[i] != NULL && set->watchpoint_list[i]->enabled)    
-      if ((set->watchpoint_list[i]->when & ARM32_WATCHPOINT_POST_EXEC) && arm32_watchpoint_test (set, cpu, inst, set->watchpoint_list[i]))
+      if ((set->watchpoint_list[i]->when & ARM32_WATCHPOINT_POST_EXEC) && arm32_cpu_watchpoint_test (cpu, inst, set->watchpoint_list[i]))
       {
 	if (set->watchpoint_list[i]->callback == NULL)
 	{

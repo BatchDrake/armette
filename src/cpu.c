@@ -22,6 +22,7 @@
 #include <sys/mman.h>
 
 #include "arm_cpu.h"
+#include "arm_watch.h"
 
 struct arm32_cpu *curr_cpu;
 
@@ -122,6 +123,9 @@ arm32_cpu_new (void)
     goto fail;
   
   if (arm32_cpu_add_armette_vdso (new) == -1)
+    goto fail;
+
+  if ((new->wps = arm32_watchpoint_set_new ()) == NULL)
     goto fail;
   
   return new;
@@ -227,7 +231,7 @@ arm32_segment_destroy (struct arm32_segment *seg)
 {
   if (seg->dtor != NULL)
     (seg->dtor) (seg->data, seg->phys, seg->size);
-  
+
   free (seg);
 }
 
@@ -245,6 +249,9 @@ arm32_cpu_destroy (struct arm32_cpu *cpu)
 
   if (cpu->dtor != NULL)
     (cpu->dtor) (cpu->data);
+
+  if (cpu->wps != NULL)
+    arm32_watchpoint_set_destroy (cpu->wps);
   
   free (cpu);
 }

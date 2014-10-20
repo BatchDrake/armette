@@ -19,6 +19,7 @@
 
 #include "arm_cpu.h"
 #include "arm_inst.h"
+#include "arm_watch.h"
 
 extern struct arm32_cpu *curr_cpu;
 
@@ -173,7 +174,7 @@ arm32_cpu_run (struct arm32_cpu *cpu)
       ret = 0;
       break;
     }
-    
+
     if ((inst = arm32_inst_decode (cpu, instruction)) == NULL)
       if (arm32_cpu_except (cpu, ARM32_EXCEPTION_UNDEF, PC (cpu), instruction) == -1)
       {
@@ -190,8 +191,11 @@ arm32_cpu_run (struct arm32_cpu *cpu)
     
     if (arm32_check_condition (cpu, instruction))
     {
+      if (arm32_cpu_watchpoint_set_test_pre (cpu, instruction))
+        EXCEPT (ARM32_EXCEPTION_TRAP);
+    
       ret = arm32_inst_execute (cpu, inst, instruction);
- 
+
       /* Jump happened, readjust PC */
       if (PC (cpu) - 8 != cpu->next_pc - 4)
         cpu->next_pc = PC (cpu);
@@ -208,6 +212,9 @@ arm32_cpu_run (struct arm32_cpu *cpu)
       else if (ret < 0)
      	if (arm32_cpu_except (cpu, EXCODE (ret), PC (cpu), 0) == -1)
           break;
+
+      if (arm32_cpu_watchpoint_set_test_post (cpu, instruction))
+        EXCEPT (ARM32_EXCEPTION_TRAP);
     }
   }
 

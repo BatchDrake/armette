@@ -312,6 +312,7 @@ IFPROTO (data)
   if (!nowrite)
   {
     REG (cpu, rd) = result;
+
     debug ("  Update r%-2d: 0x%x\n", rd, result);
   }
   

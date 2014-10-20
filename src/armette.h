@@ -20,8 +20,10 @@
 #define _ARMETTE_H
 
 #include <util.h> /* From util: Common utility library */
+
 #include <arm_cpu.h>
 #include <arm_elf.h>
 #include <arm_inst.h>
+#include <arm_watch.h>
 
 #endif /* _ARMETTE_H */

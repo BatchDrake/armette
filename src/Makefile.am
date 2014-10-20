@@ -2,7 +2,7 @@
 
 
 library_includedir = $(includedir)/armette-0.1/armette
-library_include_HEADERS = ../util/util.h armette.h arm_cpu.h arm_elf.h arm_inst.h
+library_include_HEADERS = ../util/util.h armette.h arm_cpu.h arm_elf.h arm_inst.h arm_watch.h
 lib_LTLIBRARIES = libarmette.la
 libarmette_la_CFLAGS = -I. -I../util @GLOBAL_CFLAGS@
 libarmette_la_LDFLAGS = @GLOBAL_LDFLAGS@
