@@ -79,6 +79,7 @@ struct arm32_watchpoint *arm32_cpu_watch_regs (struct arm32_cpu *, const char *,
 struct arm32_watchpoint *arm32_cpu_watch_reg (struct arm32_cpu *, const char *, int (*) (struct arm32_cpu *, struct arm32_watchpoint *, void *), void *, uint8_t);
 struct arm32_watchpoint *arm32_cpu_watch_memory (struct arm32_cpu *, const char *, int (*) (struct arm32_cpu *, struct arm32_watchpoint *, void *), void *, uint32_t);
 struct arm32_watchpoint *arm32_cpu_watch_step (struct arm32_cpu *, const char *, int (*) (struct arm32_cpu *, struct arm32_watchpoint *, void *), void *);
+struct arm32_watchpoint *arm32_cpu_watch_branch (struct arm32_cpu *, const char *, int (*) (struct arm32_cpu *, struct arm32_watchpoint *, void *), void *);
 
 void arm32_watchpoint_enable (struct arm32_watchpoint *);
 void arm32_watchpoint_disable (struct arm32_watchpoint *);

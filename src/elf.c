@@ -503,7 +503,7 @@ arm32_elf_replace_instruction (struct arm32_elf *elf, const char *name, uint32_t
   struct arm32_elf_instruction_override *new;
   uint32_t *addr;
   int sym_idx;
-  
+
   if ((addr = arm32_elf_translate (elf, vaddr)) == NULL)
     return 1;
   

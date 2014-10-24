@@ -38,6 +38,8 @@ arm32_watchpoint_new (const char *name, int type, int when)
 
     return NULL;
   }
+
+  new->enabled = 1;
   new->type = type;
   new->when = when;
 
@@ -190,12 +192,36 @@ arm32_cpu_watchpoint_test (struct arm32_cpu *cpu, uint32_t inst, struct arm32_wa
     break;
 
   case ARM32_WATCHPOINT_BRANCH:
-    /* Compare to branch, branch with link and so on */
+    n += PC (cpu) == cpu->next_pc;
     break;
     
   }
   
   return n;
+}
+
+struct arm32_watchpoint *
+arm32_cpu_watch_branch (struct arm32_cpu *cpu, const char *name, int (*callback) (struct arm32_cpu *, struct arm32_watchpoint *, void *), void *data)
+{
+  struct arm32_watchpoint *wp;
+
+  if ((wp = arm32_watchpoint_new (name, ARM32_WATCHPOINT_BRANCH, ARM32_WATCHPOINT_POST_EXEC)) == NULL)
+    return NULL;
+
+  wp->callback = callback;
+  wp->data     = data;
+  
+  if (arm32_watchpoint_register (cpu->wps, wp) == -1)
+  {
+    arm32_watchpoint_destroy (wp);
+
+    return NULL;
+  }
+
+  /* Make periodical backups of reg15 */
+  cpu->wps->regmask |= 1 << 15;
+  
+  return wp;
 }
 
 struct arm32_watchpoint *
@@ -304,10 +330,10 @@ arm32_cpu_watchpoint_set_test_pre (struct arm32_cpu *cpu, uint32_t inst)
   int i;
   struct arm32_watchpoint_set *set = cpu->wps;
   uint16_t regmask = set->regmask;
-  
+
   if (regmask)
     for (i = 0; i < 16; ++i)
-      if (regmask & i)
+      if (regmask & (1 << i))
 	set->regs_saved.r[i] = REG (cpu, i);
 
   for (i = 0; i < set->watchpoint_count; ++i)
@@ -342,7 +368,7 @@ arm32_cpu_watchpoint_set_test_post (struct arm32_cpu *cpu, uint32_t inst)
   int i;
 
   struct arm32_watchpoint_set *set = cpu->wps;
-  
+
   for (i = 0; i < set->watchpoint_count; ++i)
     if (set->watchpoint_list[i] != NULL && set->watchpoint_list[i]->enabled)    
       if ((set->watchpoint_list[i]->when & ARM32_WATCHPOINT_POST_EXEC) && arm32_cpu_watchpoint_test (cpu, inst, set->watchpoint_list[i]))

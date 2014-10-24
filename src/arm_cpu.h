@@ -83,6 +83,7 @@
 #define debug(fmt, arg...)   arm32_dbg (ARMETTE_DEBUG, fmt, ##arg)
 
 #define REG(cpu, reg) cpu->regs.r[reg]
+#define O_REG(cpu, reg) cpu->wps->regs_saved.r[reg]
 
 #define R0(cpu)  REG (cpu, 0)
 #define R1(cpu)  REG (cpu, 1)
@@ -101,6 +102,24 @@
 #define R14(cpu) REG (cpu, 14)
 #define R15(cpu) REG (cpu, 15)
 
+#define O_R0(cpu)  O_REG (cpu, 0)
+#define O_R1(cpu)  O_REG (cpu, 1)
+#define O_R2(cpu)  O_REG (cpu, 2)
+#define O_R3(cpu)  O_REG (cpu, 3)
+#define O_R4(cpu)  O_REG (cpu, 4)
+#define O_R5(cpu)  O_REG (cpu, 5)
+#define O_R6(cpu)  O_REG (cpu, 6)
+#define O_R7(cpu)  O_REG (cpu, 7)
+#define O_R8(cpu)  O_REG (cpu, 8)
+#define O_R9(cpu)  O_REG (cpu, 9)
+#define O_R10(cpu) O_REG (cpu, 10)
+#define O_R11(cpu) O_REG (cpu, 11)
+#define O_R12(cpu) O_REG (cpu, 12)
+#define O_R13(cpu) O_REG (cpu, 13)
+#define O_R14(cpu) O_REG (cpu, 14)
+#define O_R15(cpu) O_REG (cpu, 15)
+
+
 #define BS_SLL 0
 #define BS_SLR 1
 #define BS_SAR 2
@@ -109,6 +128,10 @@
 #define SP(cpu)  R13 (cpu)
 #define LR(cpu)  R14 (cpu)
 #define PC(cpu)  R15 (cpu)
+
+#define O_SP(cpu)  O_R13 (cpu)
+#define O_LR(cpu)  O_R14 (cpu)
+#define O_PC(cpu)  O_R15 (cpu)
 
 #define CPSR(cpu) cpu->regs.cpsr
 
