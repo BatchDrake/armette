@@ -1,3 +1,21 @@
+/*
+ *    ARMette: a small ARM7 multiplatform emulation library
+ *    Copyright (C) 2014  Gonzalo J. Carracedo
+ *
+ *    This program is free software: you can redistribute it and/or modify
+ *    it under the terms of the GNU General Public License as published by
+ *    the Free Software Foundation, either version 3 of the License, or
+ *    (at your option) any later version.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU General Public License for more details.
+ *
+ *    You should have received a copy of the GNU General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>
+ */
+
 #include "arm_cpu.h"
 #include "arm_inst.h"
 
@@ -26,10 +44,10 @@ IFPROTO (subfx);
 static const struct arm32_inst inst_list[15] =
 {
   {0b111111111111111111111111, 0b000100101111111111110001, IF (branchex)},
+  {0b111111000000000000001111, 0b000000000000000000001001, IF (multiply)},
   {0b111000000000000011111001, 0b000000000000000000001001, IF (halftrans)},
   {0b111110100000000000000111, 0b011110100000000000000101, IF (subfx)},
   {0b111110000000000000001111, 0b011010000000000000000111, IF (suxt)},
-  {0b111111000000000000001111, 0b000000000000000000001001, IF (multiply)},
   {0b111110000000000000001111, 0b000010000000000000001001, IF (longmul)},
   {0b110000000000000000000000, 0b000000000000000000000000, IF (data)},
   {0b111110110000000011111111, 0b000100000000000000001001, IF (swap)},
