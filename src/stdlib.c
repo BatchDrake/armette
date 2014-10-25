@@ -357,7 +357,10 @@ ARMPROTO (memcpy)
   
   if ((dst = arm32_cpu_translate_write_size (cpu, R0 (cpu), size)) == NULL ||
       (src = arm32_cpu_translate_read_size  (cpu, R1 (cpu), size)) == NULL)
+  {
+    error ("memcpy: invalid address (0x%x, 0x%x <-- %d bytes)\n", R0 (cpu), R1 (cpu), size);
     EXCEPT (ARM32_EXCEPTION_DATA);
+  }
   
   memcpy (dst, src, size);
 
@@ -563,29 +566,30 @@ ARMPROTO (free)
   EXCEPT (ARM32_EXCEPTION_DATA);
 }
 
-ARMPROTO (malloc)
+static uint32_t
+arm32_generic_stdlib_alloc (struct arm32_cpu *cpu, unsigned int count, unsigned int size)
 {
   void *mem;
   uint32_t virt;
   struct arm32_segment *seg;
-  
-  debug ("Memory allocation of %d bytes\n", R0 (cpu));
 
-  if ((virt = arm32_cpu_find_region (cpu, R0 (cpu), 16)) == -1)
+  debug ("Generic stdlib heap alloc: %d elements of %d bytes\n", count, size);
+  
+  if ((virt = arm32_cpu_find_region (cpu, __ALIGN (count * size, 16), 16)) == -1)
   {
     debug ("  Address space is full!\n");
 
     goto fail;
   }
 
-  if ((mem = calloc (1, R0 (cpu))) == NULL)
+  if ((mem = calloc (count, size)) == NULL)
   {
     debug ("  Too much!\n");
 
     goto fail;
   }
 
-  if ((seg = arm32_segment_new (virt, mem, R0 (cpu), SA_R | SA_W)) == NULL)
+  if ((seg = arm32_segment_new (virt, mem, __ALIGN (count * size, 16), SA_R | SA_W)) == NULL)
   {
     debug ("  Cannot allocate segment!\n");
     
@@ -605,9 +609,18 @@ ARMPROTO (malloc)
     goto fail;
   }
 
-  debug ("malloc: allocated block of %d bytes in virtual address 0x%x\n", R0 (cpu), virt);
+  debug ("alloc: allocated block of %d bytes in virtual address 0x%x - 0x%x\n", count * size, virt, virt + count * size - 1);
   
-  R0 (cpu) = virt;
+  return virt;
+
+fail:
+  return 0;
+}
+
+ARMPROTO (malloc)
+{
+  if ((R0 (cpu) = arm32_generic_stdlib_alloc (cpu, 1, R0 (cpu))) == 0)
+    goto fail;
 
   arm32_cpu_return (cpu);
   
@@ -617,7 +630,23 @@ fail:
   
   *arm_errno = ENOMEM;
   
-  R0 (cpu) = 0;
+  arm32_cpu_return (cpu);
+  
+  return 0;
+}
+
+ARMPROTO (calloc)
+{
+  if ((R0 (cpu) = arm32_generic_stdlib_alloc (cpu, R0 (cpu), R1 (cpu))) == 0)
+    goto fail;
+
+  arm32_cpu_return (cpu);
+  
+  return 0;
+  
+fail:
+  
+  *arm_errno = ENOMEM;
   
   arm32_cpu_return (cpu);
   
@@ -794,6 +823,7 @@ arm32_init_stdlib_hooks (struct arm32_cpu *cpu)
   arm32_cpu_override_symbol (cpu, "__fprintf_chk", ARMSYM (__fprintf_chk), NULL);
   arm32_cpu_override_symbol (cpu, "dcgettext", ARMSYM (dcgettext), NULL);
   arm32_cpu_override_symbol (cpu, "malloc", ARMSYM (malloc), NULL);
+  arm32_cpu_override_symbol (cpu, "calloc", ARMSYM (calloc), NULL);
   arm32_cpu_override_symbol (cpu, "free", ARMSYM (free), NULL);
   
   arm32_cpu_override_symbol (cpu, "posix_fadvise64", ARMSYM (posix_fadvise64), NULL);

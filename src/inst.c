@@ -514,7 +514,7 @@ IFPROTO (lsmultiple)
   for (j = 0; j < 16; ++j)
   {
     /* Note: this works ONLY if we don't care about how exceptions are handled. Specification requires r15 to be the last register to be written, and this brokens it. */
-    i = isload ? 15 - j : j;
+    i = !isload ? 15 - j : j;
     
     if (regs & (1 << i))
     {
