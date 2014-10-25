@@ -116,6 +116,9 @@ arm32_elf_translate (struct arm32_elf *elf, uint32_t virt)
 {
   int i;
 
+  if (elf->rel != NULL && elf->tramp_vaddr <= virt && virt < elf->tramp_vaddr + elf->rel_size * 4)
+    return elf->tramp_paddr + (virt - elf->tramp_vaddr);
+  
   for (i = 0; i < elf->ehdr->e_phnum; ++i)
     if (elf->phdr[i].p_type == PT_LOAD)
       if (elf->phdr[i].p_vaddr <= virt && virt < elf->phdr[i].p_vaddr + elf->phdr[i].p_filesz && elf->phdr[i].p_offset + elf->phdr[i].p_filesz <= elf->size)
@@ -201,7 +204,16 @@ arm32_elf_dynamic_init (struct arm32_elf *elf)
       elf->strtab_size = dyn[i].d_un.d_val;
       
       break;
-      
+
+    case DT_JMPREL:
+      if ((elf->rel = (Elf32_Rel *) arm32_elf_translate (elf, dyn[i].d_un.d_ptr)) == NULL)
+	error ("arm32_elf_dynamic_init: broken relocations\n");
+      break;
+
+    case DT_PLTRELSZ:
+      elf->rel_size = dyn[i].d_un.d_val / sizeof (Elf32_Rel);
+      break;
+
     case DT_STRTAB:
       if ((elf->strtab = (char *) arm32_elf_translate (elf, strtab_virt = dyn[i].d_un.d_ptr)) == NULL)
         error ("arm32_elf_dynamic_init: cannot translate DT_STRTAB address (0x%x)\n", dyn[i].d_un.d_ptr);
@@ -210,6 +222,13 @@ arm32_elf_dynamic_init (struct arm32_elf *elf)
     }
   }
 
+  if (elf->rel != NULL)
+    if ((void *) elf->rel + elf->rel_size * sizeof (Elf32_Rel) > elf->base + elf->size)
+    {
+      warning ("arm32_elf_dynamic_init: broken relocations\n");
+
+      elf->rel = NULL;
+    }
   
   if (elf->got != NULL && elf->symtab != NULL && elf->symtab_size > 0 && elf->strtab != NULL && elf->strtab_size > 0)
   {
@@ -229,6 +248,94 @@ arm32_elf_dummy_import (struct arm32_cpu *cpu, const char *name, void *data, uin
   EXCEPT (ARM32_EXCEPTION_UNDEF);
 }
 
+static void
+__pltdtor (void *data, void *addr, uint32_t size)
+{
+  free (addr);
+}
+
+int
+arm32_elf_fix_relocations (struct arm32_cpu *cpu, struct arm32_elf *elf)
+{
+  int i;
+  uint32_t tramp_seg;
+  struct arm32_segment *seg;
+  void *mem;
+  uint32_t *unit;
+  
+  /* Fix relocations shall create an executable segment
+     with a set of trampolines to be filled with fix_imports.
+
+     Symbol addresses will hold the trampoline location. No
+     further modifications should be necessary.
+  */
+
+  if (elf->rel != NULL)
+  {
+    
+    if ((tramp_seg = arm32_cpu_find_region (cpu, elf->rel_size * 4, 4)) == -1)
+    {
+      error ("Cannot find address for plt trampolines\n");
+
+      return -1;
+    }
+
+    if ((mem = malloc (elf->rel_size * 4)) == NULL)
+    {
+      error ("Memory exhausted\n");
+
+      return -1;
+    }
+    
+    if ((seg = arm32_segment_new (tramp_seg, mem, elf->rel_size * 4, SA_R | SA_X)) == NULL)
+    {
+      free (mem);
+
+      error ("Memory exhausted\n");
+
+      return -1;
+    }
+
+    arm32_segment_set_dtor (seg, __pltdtor, NULL);
+
+    if (arm32_cpu_add_segment (cpu, seg) == -1)
+    {
+      arm32_segment_destroy (seg);
+
+      error ("Memory exhausted\n");
+
+      return -1;
+    }
+    
+    elf->tramp_vaddr = tramp_seg;
+    elf->tramp_paddr = mem;
+    
+    for (i = 0; i < elf->rel_size; ++i)
+    {
+      if ((unit = arm32_cpu_translate_write_size (cpu, elf->rel[i].r_offset, 4)) == NULL)
+      {
+	error ("Broken relocation for symbol #%d (addr 0x%x unmapped)\n", i, elf->rel[i].r_offset);
+	continue;
+      }
+      
+      elf->symtab[ELF32_R_SYM (elf->rel[i].r_info)].st_value = tramp_seg + i * 4;
+
+      switch (ELF32_R_TYPE (elf->rel[i].r_info))
+      {
+      case R_ARM_JUMP_SLOT:
+	*unit = elf->symtab[ELF32_R_SYM (elf->rel[i].r_info)].st_value;
+	break;
+
+      default:
+	error ("Unsupported relocation type for symbol #%d (%d)\n", i, ELF32_R_TYPE (elf->rel[i].r_info));
+
+	continue;
+      }
+    }
+  }
+
+  return 0;
+}
 
 void
 arm32_elf_fix_imports (struct arm32_elf *elf)
@@ -412,6 +519,9 @@ arm32_cpu_new_from_elf (const char *path)
 
   arm32_elf_dynamic_init (elf);
 
+  if (arm32_elf_fix_relocations (new, elf) == -1)
+    goto fail;
+  
   arm32_elf_fix_imports (elf);
 
   arm32_elf_init_debug_symbols (elf);
@@ -503,10 +613,10 @@ arm32_elf_replace_instruction (struct arm32_elf *elf, const char *name, uint32_t
   struct arm32_elf_instruction_override *new;
   uint32_t *addr;
   int sym_idx;
-
+  
   if ((addr = arm32_elf_translate (elf, vaddr)) == NULL)
     return 1;
-  
+
   if ((new = malloc (sizeof (struct arm32_elf_instruction_override))) == NULL)
     return -1;
 
@@ -532,7 +642,7 @@ arm32_elf_replace_instruction (struct arm32_elf *elf, const char *name, uint32_t
 
   new->phys = addr;
   new->prev = *addr; /* Save old instruction */
-  
+
   *addr = 0xef000000 + ((sym_idx + ARM32_IMPORT_HOOK_BASE) & 0xffffff);
 
   return 0;

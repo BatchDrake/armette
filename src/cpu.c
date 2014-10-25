@@ -44,7 +44,7 @@ arm32_dbg (unsigned int level, const char *fmt, ...)
     if ((msg = vstrbuild (fmt, ap)) != NULL)
     {
       if (last_c == '\n')
-        fprintf (stderr, "[%c:%08x] ", errpfx[level], curr_cpu ? PC (curr_cpu) : -1);
+        fprintf (stderr, "[%c:%08x] ", errpfx[level], curr_cpu ? PC (curr_cpu) - 8: -1);
 
       fprintf (stderr, "%s", msg);
 

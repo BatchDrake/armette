@@ -66,10 +66,15 @@ struct arm32_elf
 
   Elf32_Sym *debug_symtab;
   int        debug_symtab_size;
+
+  Elf32_Rel *rel;
+  int        rel_size;
+  uint32_t   tramp_vaddr;
+  void      *tramp_paddr;
   
   char      *debug_strtab;
   int        debug_strtab_size;
-  
+
   PTR_LIST (struct arm32_elf_instruction_override, override);
 };
 
