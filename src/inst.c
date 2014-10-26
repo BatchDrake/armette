@@ -26,6 +26,7 @@ IFPROTO (swap);
 IFPROTO (lssingle);
 IFPROTO (lsmultiple);
 IFPROTO (halftrans);
+IFPROTO (doubletrans);
 IFPROTO (branch);
 IFPROTO (branchex);
 IFPROTO (codtrans);
@@ -40,12 +41,23 @@ IFPROTO (subfx);
    UBFX:
    cond 0111111 widthm1 Rd 1sb 101 Rn */
   
+/* 0xe15b32b6, */
+/* 000101011011001100101011
+   000XXXXXXXXXXXXX00001XX1
+   111000000000000011111001
+   
+ */
 
-static const struct arm32_inst inst_list[15] =
+/* strd: cond 000 PUIW0 Rn Rd addr_mode 1111 addr_mode */
+/* ldrd: cond 000 PUIW0 Rn Rd addr_mode 1101 addr_mode */
+
+static const struct arm32_inst inst_list[] =
 {
   {0b111111111111111111111111, 0b000100101111111111110001, IF (branchex)},
   {0b111111000000000000001111, 0b000000000000000000001001, IF (multiply)},
-  {0b111000000000000011111001, 0b000000000000000000001001, IF (halftrans)},
+  {0b111000010000000000001101, 0b000000000000000000001101, IF (doubletrans)},
+  {0b111001000000000011111001, 0b000000000000000000001001, IF (halftrans)},
+  {0b111001000000000000001001, 0b000001000000000000001001, IF (halftrans)},
   {0b111110100000000000000111, 0b011110100000000000000101, IF (subfx)},
   {0b111110000000000000001111, 0b011010000000000000000111, IF (suxt)},
   {0b111110000000000000001111, 0b000010000000000000001001, IF (longmul)},
@@ -292,30 +304,38 @@ IFPROTO (data)
     break;
 
   case ARM32_DATA_RSB:
+  case ARM32_DATA_RSC:
     tmp = op1;
     op1 = op2;
     op2 = tmp;
 
   case ARM32_DATA_CMP:
   case ARM32_DATA_SUB:
+  case ARM32_DATA_SBC:
     debug ("  Substract 0x%x - 0x%x\n", op1, op2);
     
     op2 = -op2;
 
   case ARM32_DATA_CMN:
   case ARM32_DATA_ADD:
+  case ARM32_DATA_ADC:
     nowrite = opcode == ARM32_DATA_CMN || opcode == ARM32_DATA_CMP;
     
     result = op1 + op2;
 
+    if (opcode == ARM32_DATA_ADC)
+      result += cpu->c;
+    else if (opcode == ARM32_DATA_SBC || opcode == ARM32_DATA_RSC)
+      result += cpu->c - 1;
+    
     /* Play with bits instead of this */
     if (opcode == ARM32_DATA_CMN || opcode == ARM32_DATA_ADD)
-      cpu->c = op1 >> 31 != result >> 31 || op2 >> 31 != result >> 31;
+      cpu->c = (op1 >> 31) != (result >> 31) || (op2 >> 31) != (result >> 31);
     else
       cpu->c = result <= op1;
     /* Borrow is the inverted carry */
     
-    cpu->v = op1 >> 31 == op2    >> 31 && op1 >> 31 != result >> 31;
+    cpu->v = (op1 >> 31) == (op2    >> 31) && (op1 >> 31) != (result >> 31);
 
     break;
     
@@ -413,6 +433,7 @@ IFPROTO (lssingle)
 
   if (preidx)
     addr += up_bit ? offset : -offset;
+  
 
   if ((seg = arm32_cpu_lookup_segment (cpu, addr)) == NULL)
   {
@@ -514,7 +535,7 @@ IFPROTO (lsmultiple)
   for (j = 0; j < 16; ++j)
   {
     /* Note: this works ONLY if we don't care about how exceptions are handled. Specification requires r15 to be the last register to be written, and this brokens it. */
-    i = !isload ? 15 - j : j;
+    i = up_bit ? j : 15 - j;
     
     if (regs & (1 << i))
     {
@@ -565,6 +586,90 @@ IFPROTO (lsmultiple)
 
   return 0;
 }
+
+/* strd: cond 000 PUIW0 Rn Rd addr_mode 1111 addr_mode */
+/* ldrd: cond 000 PUIW0 Rn Rd addr_mode 1101 addr_mode */
+
+IFPROTO (doubletrans)
+{
+  uint32_t preidx =  UINT32_GET_FIELD (instruction, 24, 1);
+  uint32_t up_bit =  UINT32_GET_FIELD (instruction, 23, 1);
+  uint32_t is_imm =  UINT32_GET_FIELD (instruction, 22, 1);
+  uint32_t wrback =  UINT32_GET_FIELD (instruction, 21, 1);
+  uint32_t offhi  =  UINT32_GET_FIELD (instruction, 8,  4);
+  uint32_t offlo  =  UINT32_GET_FIELD (instruction, 0,  4);
+  uint32_t isload = !UINT32_GET_FIELD (instruction, 5,  1);
+  uint32_t rn     =  UINT32_GET_FIELD (instruction, 16, 4);
+  uint32_t rd     =  UINT32_GET_FIELD (instruction, 12, 4);
+
+  struct arm32_segment *seg;
+  
+  uint16_t *phaddr;  
+  uint32_t addr;
+  uint32_t base = REG (cpu, rn);
+
+  uint32_t offset = is_imm ? (offhi << 4) | offlo : REG (cpu, offlo);
+
+  if (rd & 1)
+  {
+    error ("%s: register %d is odd\n", isload ? "ldrd" : "strd", rd);
+    EXCEPT (ARM32_EXCEPTION_UNDEF);
+
+  }
+
+  addr = base;
+
+  if (preidx)
+    addr += up_bit ? offset : -offset;
+
+  if ((seg = arm32_cpu_lookup_segment (cpu, addr)) == NULL)
+  {
+    error ("%s: unmapped address 0x%x\n", isload ? "ldrd" : "strd", addr);
+
+    EXCEPT (ARM32_EXCEPTION_DATA);
+  }
+
+  if (arm32_segment_check_access (seg, isload ? SA_R : SA_W) == -1)
+  {
+    error ("%s: forbidden access to 0x%x\n", isload ? "ldrd" : "strd", addr);
+
+    EXCEPT (ARM32_EXCEPTION_DATA);
+  }
+
+  phaddr = arm32_segment_translate (seg, addr);
+
+  if (isload)
+  {
+    REG (cpu, rd)     = *phaddr++;
+    REG (cpu, rd + 1) = *phaddr;
+
+    error ("ldrd: 0x%x:%x <-- r%d (0x%x)\n", REG (cpu, rd), REG (cpu, rd + 1), rn, addr);
+  }
+  else
+  {
+    *phaddr++ = REG (cpu, rd);
+    *phaddr   = REG (cpu, rd + 1);
+
+    error ("strd: 0x%x:%x --> r%d (0x%x)\n", REG (cpu, rd), REG (cpu, rd + 1), rn, addr);
+  }
+  
+  if (!preidx)
+  {
+    addr += up_bit ? offset : -offset;
+    
+    /* This is a privileged instruction! */
+    if (wrback)
+      EXCEPT (ARM32_EXCEPTION_DATA);
+    
+    wrback = 1;
+  }
+  
+  if (wrback)
+    REG (cpu, rn) = addr;
+
+  return 0;
+}
+
 
 IFPROTO (halftrans)
 {
@@ -684,6 +789,7 @@ IFPROTO (branch)
     LR (cpu) = PC (cpu) - 4;
   
   PC (cpu) = addr;
+  cpu->next_pc = addr;
   
   return 0;
 }
@@ -740,13 +846,13 @@ arm32_inst_decode (struct arm32_cpu *cpu, uint32_t inst)
   /* Don't care about condition */
   inst = (inst >> 4) & 0xffffff;
   
-  for (i = 0; i < 15; ++i)
+  for (i = 0; i < sizeof (inst_list) / sizeof (inst_list[0]); ++i)
   {
     if ((inst & inst_list[i].mask) == inst_list[i].opcode)
       return &inst_list[i];
     
   }
-  
+
   return NULL;
 }
 

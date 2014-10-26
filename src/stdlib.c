@@ -354,7 +354,7 @@ ARMPROTO (memcpy)
   uint32_t size;
 
   size = R2 (cpu);
-  
+
   if ((dst = arm32_cpu_translate_write_size (cpu, R0 (cpu), size)) == NULL ||
       (src = arm32_cpu_translate_read_size  (cpu, R1 (cpu), size)) == NULL)
   {
@@ -542,6 +542,51 @@ __arm32_stdlib_malloc_segment_dtor (void *data, void *phys, uint32_t size)
   free (phys);
 }
 
+void
+hexdump (const void *data, uint32_t size)
+{
+  const uint8_t *bytes = (const uint8_t *) data;
+
+  int i, j;
+  
+  for (i = 0; i < size; ++i)
+  {
+    if ((i & 0xf) == 0)
+      printf ("%08x  ", i);
+
+    printf ("%s%02x ", (i & 0xf) == 8 ? " " : "", bytes[i]);
+
+    if ((i & 0xf) == 0xf)
+    {
+      printf (" |");
+
+      printf (" ");
+      
+      for (j = i - 15; j <= i; ++j)
+        printf ("%c", isprint (bytes[j]) ? bytes[j] : '.');
+
+      printf ("\n");
+    }
+  }
+
+  if ((i & 0xf) != 0)
+  {
+    for (j = i; j < __ALIGN (size, 16); ++j)
+      printf ("   %s", (j & 0xf) == 8 ? " " : "");
+    
+    printf (" |");
+    
+    printf (" ");
+    
+    for (j = i & ~0xf; j < size; ++j)
+      printf ("%c", isprint (bytes[j]) ? bytes[j] : '.');
+    
+    printf ("\n");
+  }
+      
+  printf ("\n%08x  \n", i);
+}
+
 ARMPROTO (free)
 {
   uint32_t addr = R0 (cpu);
@@ -553,6 +598,10 @@ ARMPROTO (free)
       if (cpu->segment_list[i]->virt == addr &&
           cpu->segment_list[i]->dtor == __arm32_stdlib_malloc_segment_dtor)
       {
+	printf ("Free %d bytes:\n", cpu->segment_list[i]->size);
+
+	hexdump (cpu->segment_list[i]->phys, cpu->segment_list[i]->size);
+	
         arm32_segment_destroy (cpu->segment_list[i]);
         cpu->segment_list[i] = NULL;
 
