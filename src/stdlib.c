@@ -597,11 +597,7 @@ ARMPROTO (free)
     if (cpu->segment_list[i] != NULL)
       if (cpu->segment_list[i]->virt == addr &&
           cpu->segment_list[i]->dtor == __arm32_stdlib_malloc_segment_dtor)
-      {
-	printf ("Free %d bytes:\n", cpu->segment_list[i]->size);
-
-	hexdump (cpu->segment_list[i]->phys, cpu->segment_list[i]->size);
-	
+      {	
         arm32_segment_destroy (cpu->segment_list[i]);
         cpu->segment_list[i] = NULL;
 
