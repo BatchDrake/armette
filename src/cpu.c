@@ -171,6 +171,60 @@ arm32_cpu_find_region (const struct arm32_cpu *cpu, uint32_t size, uint32_t alig
   return guess;
 }
 
+uint32_t
+arm32_map_rw_buffer (struct arm32_cpu *cpu, void *data, size_t size)
+{
+  struct arm32_segment *seg;
+  uint32_t addr;
+
+  if ((addr = arm32_cpu_find_region (cpu, size, 16)) == -1)
+    return -1;
+  
+  if ((seg = arm32_segment_new (addr, data, size, SA_R | SA_W)) == NULL)
+    return -1;
+  
+  if (arm32_cpu_add_segment (cpu, seg) == -1)
+    return -1;
+
+  return addr;
+}
+
+uint32_t
+arm32_map_ro_buffer (struct arm32_cpu *cpu, void *data, size_t size)
+{
+  struct arm32_segment *seg;
+  uint32_t addr;
+
+  if ((addr = arm32_cpu_find_region (cpu, size, 16)) == -1)
+    return -1;
+  
+  if ((seg = arm32_segment_new (addr, data, size, SA_R)) == NULL)
+    return -1;
+  
+  if (arm32_cpu_add_segment (cpu, seg) == -1)
+    return -1;
+
+  return addr;
+}
+
+uint32_t
+arm32_map_exec_buffer (struct arm32_cpu *cpu, void *data, size_t size)
+{
+  struct arm32_segment *seg;
+  uint32_t addr;
+
+  if ((addr = arm32_cpu_find_region (cpu, size, 16)) == -1)
+    return -1;
+  
+  if ((seg = arm32_segment_new (addr, data, size, SA_R | SA_X)) == NULL)
+    return -1;
+  
+  if (arm32_cpu_add_segment (cpu, seg) == -1)
+    return -1;
+
+  return addr;
+}
+
 struct arm32_segment *
 arm32_segment_new (uint32_t virt, void *phys, uint32_t size, uint8_t flags)
 {
